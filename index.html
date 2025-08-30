@@ -48,6 +48,24 @@
       background-color: #f9f9f9;
       font-size: 13px;
     }
+    .sortable {
+      user-select: none;
+      position: relative;
+    }
+    .sortable::after {
+      content: "↕";
+      font-size: 11px;
+      margin-left: 6px;
+      color: #666;
+    }
+    th[aria-sort="descending"]::after {
+      content: "↓";
+      color: #000;
+    }
+    th[aria-sort="ascending"]::after {
+      content: "↑";
+      color: #000;
+    }
   </style>
 </head>
 <body>
@@ -83,7 +101,12 @@
   <table id="leagueTable">
     <thead>
       <tr>
-        <th>Tim</th><th>Bodovi</th><th>Pobjede</th><th>Neriješeno</th><th>Porazi</th><th>Gol razlika</th>
+        <th class="sortable" data-key="team" aria-sort="none">Tim</th>
+        <th class="sortable" data-key="points" aria-sort="none">Bodovi</th>
+        <th class="sortable" data-key="W" aria-sort="none">Pobjede</th>
+        <th class="sortable" data-key="D" aria-sort="none">Neriješeno</th>
+        <th class="sortable" data-key="L" aria-sort="none">Porazi</th>
+        <th class="sortable" data-key="GD" aria-sort="none">Gol razlika</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -93,6 +116,9 @@
     let originalData = [];
     let selectedSeason = "";
     let winsChart, resultPie, goalsTrend, goalDiffChart;
+    
+    
+    let currentSort = { key: null, dir: null };
 
     document.getElementById("seasonFilter").addEventListener("change", function () {
       selectedSeason = this.value;
@@ -115,10 +141,42 @@
       const query = this.value.toLowerCase();
       const rows = document.querySelectorAll("#leagueTable tbody tr");
       rows.forEach(row => {
-        const name = row.querySelector("td")?.textContent?.toLowerCase() || "";
-        row.style.display = name.includes(query) ? "" : "none";
+        if (!row.classList.contains("statsRow")) {
+          const name = row.querySelector("td")?.textContent?.toLowerCase() || "";
+          row.style.display = name.includes(query) ? "" : "none";
+        }
       });
     });
+
+    
+    function attachSortingHandlers() {
+      const headers = document.querySelectorAll('#leagueTable thead th.sortable');
+      headers.forEach(th => {
+        th.addEventListener('click', () => {
+          const key = th.getAttribute('data-key');
+
+          
+          if (currentSort.key === key) {
+            currentSort.dir = currentSort.dir === 'desc' ? 'asc' : 'desc';
+          } else {
+            currentSort.key = key;
+            currentSort.dir = 'desc'; 
+          }
+
+          
+          headers.forEach(h => {
+            if (h === th) {
+              h.setAttribute('aria-sort', currentSort.dir === 'asc' ? 'ascending' : 'descending');
+            } else {
+              h.setAttribute('aria-sort', 'none');
+            }
+          });
+
+          
+          renderTable(document.getElementById("teamFilter").value, selectedSeason);
+        });
+      });
+    }
 
     Papa.parse("PremierLeague.csv", {
       download: true,
@@ -144,6 +202,7 @@
           teamSelect.appendChild(opt);
         });
 
+        attachSortingHandlers(); 
         renderTable();
         createCharts("");
       }
@@ -175,11 +234,34 @@
         teams[away].GA += fthg;
       });
 
-      const rows = Object.entries(teams).map(([team, stats]) => {
+      let rows = Object.entries(teams).map(([team, stats]) => {
         const pts = stats.W * 3 + stats.D;
         const gd = stats.GF - stats.GA;
         return { team, ...stats, points: pts, GD: gd };
-      }).sort((a, b) => b.points - a.points);
+      });
+
+      
+      if (currentSort.key) {
+        rows.sort((a, b) => {
+          let aVal = a[currentSort.key];
+          let bVal = b[currentSort.key];
+          
+          
+          if (typeof aVal === 'string') {
+            aVal = aVal.toLowerCase();
+            bVal = bVal.toLowerCase();
+          }
+          
+          let comparison = 0;
+          if (aVal > bVal) comparison = 1;
+          if (aVal < bVal) comparison = -1;
+          
+          return currentSort.dir === 'desc' ? -comparison : comparison;
+        });
+      } else {
+        
+        rows.sort((a, b) => b.points - a.points);
+      }
 
       (filterTeam ? rows.filter(r => r.team === filterTeam) : rows).forEach(r => {
         const tr = document.createElement("tr");
