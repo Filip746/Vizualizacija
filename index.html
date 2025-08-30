@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Premier League Vizualizacija</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 1000px;
+      margin: auto;
+    }
+    canvas {
+      display: none;
+      max-width: 100%;
+      margin: 30px auto;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 6px;
+      text-align: center;
+      cursor: pointer;
+    }
+    th {
+      background-color: #eee;
+    }
+    h1, h2 {
+      text-align: center;
+    }
+    select, input[type="text"] {
+      padding: 6px;
+      margin: 5px 0;
+      display: block;
+      width: 100%;
+    }
+    .filters {
+      margin-bottom: 20px;
+    }
+    .statsRow td {
+      background-color: #f9f9f9;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Premier League Vizualizacija</h1>
+
+  <div class="filters">
+    <label for="seasonFilter">Filtriraj po sezoni:</label>
+    <select id="seasonFilter"><option value="">Sve sezone</option></select>
+
+    <label for="chartSelector">Odaberi grafikon:</label>
+    <select id="chartSelector">
+      <option value="">-- Odaberi --</option>
+      <option value="winsChart">Pobjede po timovima</option>
+      <option value="resultPie">Ishodi utakmica</option>
+      <option value="goalsTrend">Golovi po utakmicama</option>
+      <option value="goalDiffChart">Gol razlika po timovima</option>
+    </select>
+  </div>
+
+  <canvas id="winsChart" height="300"></canvas>
+  <canvas id="resultPie" height="300"></canvas>
+  <canvas id="goalsTrend" height="300"></canvas>
+  <canvas id="goalDiffChart" height="300"></canvas>
+
+  <h2>Tablica Lige</h2>
+
+  <label for="teamFilter">Filtriraj po timu:</label>
+  <select id="teamFilter"><option value="">Svi timovi</option></select>
+
+  <label for="teamSearch">Pretraži tim:</label>
+  <input type="text" id="teamSearch" placeholder="Upiši ime tima..." />
+
+  <table id="leagueTable">
+    <thead>
+      <tr>
+        <th>Tim</th><th>Bodovi</th><th>Pobjede</th><th>Neriješeno</th><th>Porazi</th><th>Gol razlika</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    let originalData = [];
+    let selectedSeason = "";
+    let winsChart, resultPie, goalsTrend, goalDiffChart;
+
+    document.getElementById("seasonFilter").addEventListener("change", function () {
+      selectedSeason = this.value;
+      renderTable(document.getElementById("teamFilter").value, selectedSeason);
+      updateCharts(selectedSeason);
+    });
+
+    document.getElementById("chartSelector").addEventListener("change", e => {
+      const id = e.target.value;
+      ['winsChart', 'resultPie', 'goalsTrend', 'goalDiffChart'].forEach(cid => {
+        document.getElementById(cid).style.display = cid === id ? "block" : "none";
+      });
+    });
+
+    document.getElementById("teamFilter").addEventListener("change", () => {
+      renderTable(document.getElementById("teamFilter").value, selectedSeason);
+    });
+
+    document.getElementById("teamSearch").addEventListener("input", function () {
+      const query = this.value.toLowerCase();
+      const rows = document.querySelectorAll("#leagueTable tbody tr");
+      rows.forEach(row => {
+        const name = row.querySelector("td")?.textContent?.toLowerCase() || "";
+        row.style.display = name.includes(query) ? "" : "none";
+      });
+    });
+
+    Papa.parse("PremierLeague.csv", {
+      download: true,
+      header: true,
+      complete: function (results) {
+        originalData = results.data.filter(r => r.HomeTeam && r.AwayTeam);
+
+        const seasons = [...new Set(originalData.map(r => r.Season).filter(Boolean))].sort();
+        const seasonSelect = document.getElementById("seasonFilter");
+        seasons.forEach(season => {
+          const opt = document.createElement("option");
+          opt.value = season;
+          opt.textContent = season;
+          seasonSelect.appendChild(opt);
+        });
+
+        const teamNames = [...new Set(originalData.flatMap(r => [r.HomeTeam, r.AwayTeam]))].sort();
+        const teamSelect = document.getElementById("teamFilter");
+        teamNames.forEach(team => {
+          const opt = document.createElement("option");
+          opt.value = team;
+          opt.textContent = team;
+          teamSelect.appendChild(opt);
+        });
+
+        renderTable();
+        createCharts("");
+      }
+    });
+
+    function renderTable(filterTeam = "", filterSeason = "") {
+      const tbody = document.querySelector("#leagueTable tbody");
+      tbody.innerHTML = "";
+
+      const data = filterSeason ? originalData.filter(r => r.Season === filterSeason) : originalData;
+      const teams = {};
+
+      data.forEach(r => {
+        const home = r.HomeTeam, away = r.AwayTeam;
+        const fthg = +r.FullTimeHomeTeamGoals || 0;
+        const ftag = +r.FullTimeAwayTeamGoals || 0;
+        const res = r.FullTimeResult;
+
+        if (!teams[home]) teams[home] = { W:0, D:0, L:0, GF:0, GA:0 };
+        if (!teams[away]) teams[away] = { W:0, D:0, L:0, GF:0, GA:0 };
+
+        if (res === "H") { teams[home].W++; teams[away].L++; }
+        else if (res === "A") { teams[away].W++; teams[home].L++; }
+        else { teams[home].D++; teams[away].D++; }
+
+        teams[home].GF += fthg;
+        teams[home].GA += ftag;
+        teams[away].GF += ftag;
+        teams[away].GA += fthg;
+      });
+
+      const rows = Object.entries(teams).map(([team, stats]) => {
+        const pts = stats.W * 3 + stats.D;
+        const gd = stats.GF - stats.GA;
+        return { team, ...stats, points: pts, GD: gd };
+      }).sort((a, b) => b.points - a.points);
+
+      (filterTeam ? rows.filter(r => r.team === filterTeam) : rows).forEach(r => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${r.team}</td><td>${r.points}</td><td>${r.W}</td><td>${r.D}</td><td>${r.L}</td><td>${r.GD}</td>`;
+        tr.onclick = () => showTeamStats(r.team, tr);
+        tbody.appendChild(tr);
+      });
+    }
+
+    function createCharts(season) {
+      const ctx1 = document.getElementById("winsChart");
+      const ctx2 = document.getElementById("resultPie");
+      const ctx3 = document.getElementById("goalsTrend");
+      const ctx4 = document.getElementById("goalDiffChart");
+
+      winsChart = new Chart(ctx1, { type: "bar", data: {}, options: {} });
+      resultPie = new Chart(ctx2, { type: "pie", data: {}, options: {} });
+      goalsTrend = new Chart(ctx3, { type: "line", data: {}, options: {} });
+      goalDiffChart = new Chart(ctx4, { type: "bar", data: {}, options: {} });
+
+      updateCharts(season);
+    }
+
+    function updateCharts(season) {
+      const data = season ? originalData.filter(r => r.Season === season) : originalData;
+      const teams = {};
+      const resultsCount = { H: 0, D: 0, A: 0 };
+      const goalsPerMatch = [];
+
+      data.forEach(r => {
+        const home = r.HomeTeam, away = r.AwayTeam;
+        const fthg = +r.FullTimeHomeTeamGoals || 0;
+        const ftag = +r.FullTimeAwayTeamGoals || 0;
+        const res = r.FullTimeResult;
+
+        if (!teams[home]) teams[home] = { W: 0, GF: 0, GA: 0 };
+        if (!teams[away]) teams[away] = { W: 0, GF: 0, GA: 0 };
+
+        if (res === "H") { teams[home].W++; resultsCount.H++; }
+        else if (res === "A") { teams[away].W++; resultsCount.A++; }
+        else resultsCount.D++;
+
+        teams[home].GF += fthg;
+        teams[home].GA += ftag;
+        teams[away].GF += ftag;
+        teams[away].GA += fthg;
+
+        goalsPerMatch.push(fthg + ftag);
+      });
+
+      winsChart.data.labels = Object.keys(teams);
+      winsChart.data.datasets = [{ label: "Pobjede", data: Object.values(teams).map(t => t.W), backgroundColor: "teal" }];
+      winsChart.update();
+
+      resultPie.data.labels = ["Domaći", "Neriješeno", "Gostujući"];
+      resultPie.data.datasets = [{ data: [resultsCount.H, resultsCount.D, resultsCount.A], backgroundColor: ["green", "orange", "red"] }];
+      resultPie.update();
+
+      goalsTrend.data.labels = goalsPerMatch.map((_, i) => i + 1);
+      goalsTrend.data.datasets = [{ label: "Golova po utakmici", data: goalsPerMatch, borderColor: "blue", fill: false }];
+      goalsTrend.update();
+
+      goalDiffChart.data.labels = Object.keys(teams);
+      goalDiffChart.data.datasets = [{ label: "Gol razlika", data: Object.values(teams).map(t => t.GF - t.GA), backgroundColor: "purple" }];
+      goalDiffChart.update();
+    }
+
+    function showTeamStats(team, rowElement) {
+      const id = "stats-" + team.replace(/\s+/g, "_");
+      document.getElementById(id)?.remove();
+
+      const matches = originalData.filter(r => (r.HomeTeam === team || r.AwayTeam === team) && (!selectedSeason || r.Season === selectedSeason));
+      let gf = 0, ga = 0, w = 0, d = 0, l = 0, y = 0, r = 0;
+
+      matches.forEach(m => {
+        const isHome = m.HomeTeam === team;
+        const fthg = +m.FullTimeHomeTeamGoals || 0;
+        const ftag = +m.FullTimeAwayTeamGoals || 0;
+        const res = m.FullTimeResult;
+
+        if (isHome) {
+          gf += fthg; ga += ftag;
+          if (res === "H") w++; else if (res === "D") d++; else l++;
+          y += +m.HomeTeamYellowCards || 0;
+          r += +m.HomeTeamRedCards || 0;
+        } else {
+          gf += ftag; ga += fthg;
+          if (res === "A") w++; else if (res === "D") d++; else l++;
+          y += +m.AwayTeamYellowCards || 0;
+          r += +m.AwayTeamRedCards || 0;
+        }
+      });
+
+      const games = matches.length;
+      const tr = document.createElement("tr");
+      tr.id = id;
+      tr.className = "statsRow";
+      tr.innerHTML = `<td colspan="6" style="text-align:center">
+        <b>${team}</b> - ${games} utakmica<br>
+        Golova: ${gf} / Primljeno: ${ga}<br>
+        Pobjede: ${w}, Neriješeno: ${d}, Porazi: ${l}<br>
+        Bodova po utakmici: ${((w*3+d)/games).toFixed(2)}<br>
+        Žuti kartoni: ${y}, Crveni kartoni: ${r}
+      </td>`;
+      rowElement.after(tr);
+    }
+  </script>
+</body>
+</html>
