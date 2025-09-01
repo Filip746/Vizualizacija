@@ -257,7 +257,18 @@
 
       (filterTeam ? rows.filter(r => r.team === filterTeam) : rows).forEach(r => {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${r.team}</td><td>${r.points}</td><td>${r.W}</td><td>${r.D}</td><td>${r.L}</td><td>${r.GD}</td>`;
+        const totalGames = r.W + r.D + r.L;
+        const avgPoints = (r.points / totalGames).toFixed(2);
+        const goalsAgainst = r.GF - r.GD; // GA = GF - GD
+
+        tr.innerHTML = `
+          <td>${r.team}</td>
+          <td title="Bodova po utakmici: ${avgPoints}">${r.points}</td>
+          <td>${r.W}</td>
+          <td>${r.D}</td>
+          <td>${r.L}</td>
+          <td title="Postigao: ${r.GF}, Primio: ${goalsAgainst}">${r.GD}</td>
+        `;
         tr.onclick = () => showTeamStats(r.team, tr);
         tbody.appendChild(tr);
       });
