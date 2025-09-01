@@ -117,7 +117,6 @@
     let selectedSeason = "";
     let winsChart, resultPie, goalsTrend, goalDiffChart;
     
-    
     let currentSort = { key: null, dir: null };
 
     document.getElementById("seasonFilter").addEventListener("change", function () {
@@ -148,14 +147,12 @@
       });
     });
 
-    
     function attachSortingHandlers() {
       const headers = document.querySelectorAll('#leagueTable thead th.sortable');
       headers.forEach(th => {
         th.addEventListener('click', () => {
           const key = th.getAttribute('data-key');
 
-          
           if (currentSort.key === key) {
             currentSort.dir = currentSort.dir === 'desc' ? 'asc' : 'desc';
           } else {
@@ -163,7 +160,6 @@
             currentSort.dir = 'desc'; 
           }
 
-          
           headers.forEach(h => {
             if (h === th) {
               h.setAttribute('aria-sort', currentSort.dir === 'asc' ? 'ascending' : 'descending');
@@ -172,7 +168,6 @@
             }
           });
 
-          
           renderTable(document.getElementById("teamFilter").value, selectedSeason);
         });
       });
@@ -240,12 +235,10 @@
         return { team, ...stats, points: pts, GD: gd };
       });
 
-      
       if (currentSort.key) {
         rows.sort((a, b) => {
           let aVal = a[currentSort.key];
           let bVal = b[currentSort.key];
-          
           
           if (typeof aVal === 'string') {
             aVal = aVal.toLowerCase();
@@ -259,7 +252,6 @@
           return currentSort.dir === 'desc' ? -comparison : comparison;
         });
       } else {
-        
         rows.sort((a, b) => b.points - a.points);
       }
 
@@ -286,16 +278,19 @@
     }
 
     function updateCharts(season) {
+      
       const data = season ? originalData.filter(r => r.Season === season) : originalData;
       const teams = {};
       const resultsCount = { H: 0, D: 0, A: 0 };
-      const goalsPerMatch = [];
+      const matchData = [];
 
-      data.forEach(r => {
+      
+      data.forEach((r, index) => {
         const home = r.HomeTeam, away = r.AwayTeam;
         const fthg = +r.FullTimeHomeTeamGoals || 0;
         const ftag = +r.FullTimeAwayTeamGoals || 0;
         const res = r.FullTimeResult;
+        const totalGoals = fthg + ftag;
 
         if (!teams[home]) teams[home] = { W: 0, GF: 0, GA: 0 };
         if (!teams[away]) teams[away] = { W: 0, GF: 0, GA: 0 };
@@ -309,9 +304,20 @@
         teams[away].GF += ftag;
         teams[away].GA += fthg;
 
-        goalsPerMatch.push(fthg + ftag);
+        
+        const date = r.Date ? r.Date.split('T')[0] : `Kolo ${Math.floor(index/10) + 1}`;
+        const matchLabel = `${home.substring(0,3)} vs ${away.substring(0,3)}`;
+        
+        matchData.push({
+          label: `${date} (${matchLabel})`,
+          shortLabel: matchLabel,
+          goals: totalGoals,
+          result: `${fthg}-${ftag}`,
+          season: r.Season || 'N/A'
+        });
       });
 
+      
       winsChart.data.labels = Object.keys(teams);
       winsChart.data.datasets = [{ label: "Pobjede", data: Object.values(teams).map(t => t.W), backgroundColor: "teal" }];
       winsChart.update();
@@ -320,8 +326,64 @@
       resultPie.data.datasets = [{ data: [resultsCount.H, resultsCount.D, resultsCount.A], backgroundColor: ["green", "orange", "red"] }];
       resultPie.update();
 
-      goalsTrend.data.labels = goalsPerMatch.map((_, i) => i + 1);
-      goalsTrend.data.datasets = [{ label: "Golova po utakmici", data: goalsPerMatch, borderColor: "blue", fill: false }];
+      
+      const limitedMatchData = season === "" ? matchData : matchData.slice(0, 100);
+
+      goalsTrend.data.labels = limitedMatchData.map(m => m.shortLabel);
+      goalsTrend.data.datasets = [{
+        label: "Golova po utakmici",
+        data: limitedMatchData.map(m => m.goals),
+        borderColor: "blue",
+        backgroundColor: "rgba(0, 123, 255, 0.1)",
+        fill: false,
+        tension: 0.1
+      }];
+      
+      
+      const chartTitle = season ? `Golovi po utakmicama - ${season}` : 'Golovi po utakmicama - Sve sezone';
+      
+      goalsTrend.options = {
+        responsive: true,
+        plugins: {
+          title: {
+            display: true,
+            text: chartTitle
+          },
+          tooltip: {
+            callbacks: {
+              title: function(context) {
+                const index = context[0].dataIndex;
+                return limitedMatchData[index].label;
+              },
+              label: function(context) {
+                const index = context.dataIndex;
+                const match = limitedMatchData[index];
+                return `Golova: ${match.goals} (${match.result}) - Sezona: ${match.season}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            title: {
+              display: true,
+              text: 'Utakmice'
+            },
+            ticks: {
+              maxRotation: 45,
+              minRotation: 45
+            }
+          },
+          y: {
+            title: {
+              display: true,
+              text: 'Broj golova'
+            },
+            beginAtZero: true
+          }
+        }
+      };
+      
       goalsTrend.update();
 
       goalDiffChart.data.labels = Object.keys(teams);
@@ -331,7 +393,12 @@
 
     function showTeamStats(team, rowElement) {
       const id = "stats-" + team.replace(/\s+/g, "_");
-      document.getElementById(id)?.remove();
+      const existingStats = document.getElementById(id);
+
+      if (existingStats) {
+        existingStats.remove();
+        return; 
+      }
 
       const matches = originalData.filter(r => (r.HomeTeam === team || r.AwayTeam === team) && (!selectedSeason || r.Season === selectedSeason));
       let gf = 0, ga = 0, w = 0, d = 0, l = 0, y = 0, r = 0;
